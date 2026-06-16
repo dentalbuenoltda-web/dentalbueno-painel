@@ -377,6 +377,7 @@ tr:hover td{background:var(--blue-lt)}
         <select id="so-rep" onchange="renderSellOut()"><option value="">Todos</option></select>
         <button class="btn-sm" onclick="limparFiltrosSellOut()">Limpar</button>
       </div>
+      <div id="so-data-info" style="font-size:12px;padding:7px 10px;border-radius:var(--r-sm);margin-bottom:12px;display:none"></div>
       <div class="metrics-grid" id="so-metrics" style="margin-bottom:16px">
         <div class="metric"><div class="mlbl">Itens</div><div class="mval" id="so-cnt">0</div></div>
         <div class="metric"><div class="mlbl">Qtde Total</div><div class="mval" id="so-qtde">0</div></div>
@@ -655,6 +656,7 @@ var allFixed = [], allCurrent = [], allData = [], filtered = [];
 var rawFixed = {v:null,g:null,g2:null,c:null};
 var rawCurrent = {v:null,g:null,g2:null,c:null};
 var pedidosItens = [];
+var pedidosItensFixed = {}; // keyed by mesRef ("Março/2026"), item-level from rawFixed.g
 var CE = null, CR = null;
 var _filterTimer = null;
 var toastTimer;
@@ -1187,6 +1189,11 @@ function processFixed() {
     allFixed = allFixed.filter(function(r) { return r.Mes !== mesRef; });
     var novos = parseVendas(rawFixed.v, datas, clis, mesRef).filter(function(r){return !isExcl(r.Status)});
     allFixed = allFixed.concat(novos);
+    // Store item-level data for Sell Out (from rawFixed.g/g2)
+    pedidosItensFixed[mesRef] = [];
+    [rawFixed.g, rawFixed.g2].filter(Boolean).forEach(function(t) {
+      try { pedidosItensFixed[mesRef] = pedidosItensFixed[mesRef].concat(parseItensGeral(t)); } catch(e) {}
+    });
     renderMesesSalvos();
     publishToSheets(allFixed.concat(allCurrent));
     buildCombined();
@@ -1229,6 +1236,7 @@ function renderMesesSalvos() {
 function removerMes(mes) {
   if(!confirm('Remover todos os pedidos de ' + mes + '?')) return;
   allFixed = allFixed.filter(function(r){ return r.Mes !== mes; });
+  delete pedidosItensFixed[mes];
   renderMesesSalvos();
   buildCombined();
   publishToSheets(allFixed.concat(allCurrent));
@@ -2063,33 +2071,51 @@ function gerarPdfPromo(id) {
 <!-- ═══ BLOCO 5: Sell Out ═══ -->
 <script>
 
-// Flattens pedidosItens into one row per item, using data_orig as priority date
+// Returns all item-level rows combining historical months (pedidosItensFixed)
+// and current month (pedidosItens). Deduplicates by pedido+cod+qtde+pco_liq.
+// Date reference is always data_orig (order origin date), falling back to data_fat.
 function getSellOutRows() {
   var rows = [];
-  pedidosItens.forEach(function(ped) {
-    var dataRef = (ped.data_orig && ped.data_orig.trim()) ? ped.data_orig : (ped.data_fat || '');
-    (ped.itens || []).forEach(function(it) {
-      rows.push({
-        data_orig: dataRef,
-        data_fat:  ped.data_fat || '',
-        pedido:    ped.pedido || '',
-        cliente:   ped.cliente || '',
-        rep:       ped.rep || '',
-        marca:     it.marca || '',
-        produto:   it.nome || '',
-        cod:       it.cod || '',
-        qtde:      it.qtde || 0,
-        pco_liq:   it.pco_liq || 0,
-        total_liq: it.total_liq || 0
+  var seen = {};
+
+  function addPedidos(arr) {
+    (arr || []).forEach(function(ped) {
+      var dataRef = (ped.data_orig && ped.data_orig.trim()) ? ped.data_orig : (ped.data_fat || '');
+      (ped.itens || []).forEach(function(it) {
+        var key = (ped.pedido||'') + '|' + (it.cod||'') + '|' + (it.qtde||0) + '|' + (it.pco_liq||0);
+        if(seen[key]) return;
+        seen[key] = true;
+        rows.push({
+          data_orig: dataRef,
+          data_fat:  ped.data_fat || '',
+          pedido:    ped.pedido   || '',
+          cliente:   ped.cliente  || '',
+          rep:       ped.rep      || '',
+          marca:     it.marca     || '',
+          produto:   it.nome      || '',
+          cod:       it.cod       || '',
+          qtde:      it.qtde      || 0,
+          pco_liq:   it.pco_liq   || 0,
+          total_liq: it.total_liq || 0
+        });
       });
     });
+  }
+
+  // 1. Historical months imported this session (processFixed)
+  Object.keys(pedidosItensFixed).sort().forEach(function(mes) {
+    addPedidos(pedidosItensFixed[mes]);
   });
+
+  // 2. Current month (rawCurrent.g/g2 → pedidosItens)
+  addPedidos(pedidosItens);
+
   return rows;
 }
 
 function getSellOutFiltered() {
   var rows = getSellOutRows();
-  var ini   = document.getElementById('so-ini').value;
+  var ini   = document.getElementById('so-ini').value;   // YYYY-MM-DD
   var fim   = document.getElementById('so-fim').value;
   var marca = document.getElementById('so-marca').value;
   var rep   = document.getElementById('so-rep').value;
@@ -2103,7 +2129,31 @@ function getSellOutFiltered() {
   });
 }
 
+function _atualizarInfoSellOut() {
+  var el = document.getElementById('so-data-info');
+  if(!el) return;
+  var mesesHist = Object.keys(pedidosItensFixed).sort();
+  var temAtual  = pedidosItens.length > 0;
+  if(!mesesHist.length && !temAtual) {
+    el.style.display = 'block';
+    el.style.background = 'var(--amber-lt)';
+    el.style.color = 'var(--amber-dk)';
+    el.style.borderLeft = '3px solid var(--amber-dk)';
+    el.innerHTML = '&#9888; Nenhum dado de item carregado. Para ver dados hist&oacute;ricos, importe os Relat&oacute;rios Gerais dos meses fechados na aba <strong>Importa&ccedil;&atilde;o &rarr; Fechados</strong>.';
+  } else {
+    var partes = [];
+    if(mesesHist.length) partes.push('Meses fechados: <strong>' + mesesHist.join(', ') + '</strong>');
+    if(temAtual) partes.push('M&ecirc;s atual carregado');
+    el.style.display = 'block';
+    el.style.background = 'var(--green-lt)';
+    el.style.color = 'var(--green-dk)';
+    el.style.borderLeft = '3px solid var(--green-dk)';
+    el.innerHTML = '&#10003; Dados dispon&iacute;veis &mdash; ' + partes.join(' &middot; ');
+  }
+}
+
 function initSellOut() {
+  _atualizarInfoSellOut();
   var rows = getSellOutRows();
   var marcas = Array.from(new Set(rows.map(function(r){ return r.marca; }).filter(Boolean))).sort();
   var reps   = Array.from(new Set(rows.map(function(r){ return r.rep;   }).filter(Boolean))).sort();
