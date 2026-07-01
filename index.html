@@ -300,7 +300,7 @@ tr:hover td{background:var(--blue-lt)}
   </div>
 
   <div style="display:grid;grid-template-columns:3fr 2fr;gap:16px;margin-bottom:16px;align-items:start">
-    <div class="tcard"><div class="thead2"><h3>Evolu&ccedil;&atilde;o Mensal</h3></div>
+    <div class="tcard"><div class="thead2"><h3>Evolu&ccedil;&atilde;o Mensal</h3><span style="font-size:11px;color:var(--muted)">sempre mostra todos os meses</span></div>
       <div style="padding:12px;height:240px"><canvas id="chartEvo"></canvas></div>
     </div>
     <div class="tcard"><div class="thead2"><h3>Por Representante</h3><span id="chartRepTotal" style="font-size:11px;color:var(--muted)"></span></div>
@@ -1176,7 +1176,7 @@ function applyFilters() {
   else if(currentPeriod==='atual') base = allData.filter(function(r){return r.MesRef===getCurrentMesRef()});
   else base = allData.filter(function(r){return r.MesRef===currentPeriod});
 
-  filtered = base.filter(function(r){
+  function matchFiltrosSecundarios(r) {
     if(rep && r.Rep !== rep) return false;
     if(st  && r.Status !== st) return false;
     if(cli) {
@@ -1192,10 +1192,15 @@ function applyFilters() {
       if(d2 && dComp > d2) return false;
     }
     return true;
-  });
+  }
+
+  filtered = base.filter(matchFiltrosSecundarios);
+  // Evolucao Mensal ignora o filtro de periodo de proposito (o grafico existe
+  // para mostrar a tendencia entre meses); os demais filtros continuam valendo.
+  var filteredEvolucao = allData.filter(matchFiltrosSecundarios);
 
   renderMetrics(filtered);
-  renderCharts(filtered);
+  renderCharts(filtered, filteredEvolucao);
   renderTable(filtered);
 
   var hasFilter = rep||st||cli||d1||d2||currentPeriod!=='ambos';
@@ -1277,11 +1282,12 @@ function renderTable(data) {
   }).join('')+(data.length>2000?'<tr><td colspan="14" style="text-align:center;color:var(--hint);padding:10px;font-size:12px">Mostrando 2.000 de '+data.length+'. Use os filtros para refinar.</td></tr>':'');
 }
 
-function renderCharts(v) {
-  // ── Evolução Mensal ──────────────────────────────────
+function renderCharts(v, vEvolucao) {
+  // ── Evolução Mensal (ignora o filtro de período, ver applyFilters) ──
+  var vEvo = vEvolucao || v;
   var byMes = {};
-  for(var i=0; i<v.length; i++) {
-    var r = v[i];
+  for(var i=0; i<vEvo.length; i++) {
+    var r = vEvo[i];
     var mk = r.MesRef || calcMes(r);
     if(mk) byMes[mk] = (byMes[mk] || 0) + r.Liq;
   }
