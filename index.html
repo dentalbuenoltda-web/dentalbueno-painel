@@ -1464,23 +1464,26 @@ function renderPreviewFixed() {
   if(!el) return;
   if(!(rawFixed.v && rawFixed.g && rawFixed.c)) { el.style.display = 'none'; return; }
   el.style.display = 'block';
-  try {
-    var mesRef = document.getElementById('mes-ref').value || '(selecione o mês)';
-    var datas = parseGeralCombinado(rawFixed.g, rawFixed.g2);
-    var clis  = parseClientes(rawFixed.c);
-    var novos = parseVendas(rawFixed.v, datas, clis, mesRef).filter(function(r){return !isExcl(r.Status)});
-    var totalLiq = novos.reduce(function(s,r){return s+(r.Liq||0)}, 0);
-    var reps = Array.from(new Set(novos.map(function(r){return r.Rep}).filter(Boolean)));
-    el.innerHTML = '<div class="import-preview">' +
-      '<div class="import-preview-head">🔍 Prévia da importação — ' + mesRef + '</div>' +
-      '<div class="import-preview-grid">' +
-        '<div class="import-preview-item"><div class="ipv-lbl">Pedidos</div><div class="ipv-val">' + novos.length + '</div></div>' +
-        '<div class="import-preview-item"><div class="ipv-lbl">Valor Líquido</div><div class="ipv-val">R$ ' + fmtN(totalLiq) + '</div></div>' +
-        '<div class="import-preview-item"><div class="ipv-lbl">Representantes</div><div class="ipv-val">' + reps.length + '</div></div>' +
-      '</div></div>';
-  } catch(e) {
-    el.innerHTML = '<div class="import-preview"><div class="import-preview-err">⚠ Não foi possível gerar a prévia: ' + e.message + '. Confira se os arquivos são do mês/loja corretos antes de adicionar.</div></div>';
-  }
+  el.innerHTML = '<div class="import-preview"><div class="import-preview-head">⏳ Processando prévia, aguarde...</div></div>';
+  setTimeout(function(){
+    try {
+      var mesRef = document.getElementById('mes-ref').value || '(selecione o mês)';
+      var datas = parseGeralCombinado(rawFixed.g, rawFixed.g2);
+      var clis  = parseClientes(rawFixed.c);
+      var novos = parseVendas(rawFixed.v, datas, clis, mesRef).filter(function(r){return !isExcl(r.Status)});
+      var totalLiq = novos.reduce(function(s,r){return s+(r.Liq||0)}, 0);
+      var reps = Array.from(new Set(novos.map(function(r){return r.Rep}).filter(Boolean)));
+      el.innerHTML = '<div class="import-preview">' +
+        '<div class="import-preview-head">🔍 Prévia da importação — ' + mesRef + '</div>' +
+        '<div class="import-preview-grid">' +
+          '<div class="import-preview-item"><div class="ipv-lbl">Pedidos</div><div class="ipv-val">' + novos.length + '</div></div>' +
+          '<div class="import-preview-item"><div class="ipv-lbl">Valor Líquido</div><div class="ipv-val">R$ ' + fmtN(totalLiq) + '</div></div>' +
+          '<div class="import-preview-item"><div class="ipv-lbl">Representantes</div><div class="ipv-val">' + reps.length + '</div></div>' +
+        '</div></div>';
+    } catch(e) {
+      el.innerHTML = '<div class="import-preview"><div class="import-preview-err">⚠ Não foi possível gerar a prévia: ' + e.message + '. Confira se os arquivos são do mês/loja corretos antes de adicionar.</div></div>';
+    }
+  }, 30);
 }
 
 function checkCurrentReady() {
@@ -1494,24 +1497,27 @@ function renderPreviewCurrent() {
   if(!el) return;
   if(!(rawCurrent.v && rawCurrent.g)) { el.style.display = 'none'; return; }
   el.style.display = 'block';
-  try {
-    var datas = parseGeralCombinado(rawCurrent.g, rawCurrent.g2||null);
-    var clis = {};
-    if(rawCurrent.c) clis = parseClientes(rawCurrent.c);
-    else if(rawFixed.c) clis = parseClientes(rawFixed.c);
-    var novos = parseVendas(rawCurrent.v, datas, clis, 'atual').filter(function(r){return !isExcl(r.Status)});
-    var totalLiq = novos.reduce(function(s,r){return s+(r.Liq||0)}, 0);
-    var reps = Array.from(new Set(novos.map(function(r){return r.Rep}).filter(Boolean)));
-    el.innerHTML = '<div class="import-preview">' +
-      '<div class="import-preview-head">🔍 Prévia da importação — Mês Atual</div>' +
-      '<div class="import-preview-grid">' +
-        '<div class="import-preview-item"><div class="ipv-lbl">Pedidos</div><div class="ipv-val">' + novos.length + '</div></div>' +
-        '<div class="import-preview-item"><div class="ipv-lbl">Valor Líquido</div><div class="ipv-val">R$ ' + fmtN(totalLiq) + '</div></div>' +
-        '<div class="import-preview-item"><div class="ipv-lbl">Representantes</div><div class="ipv-val">' + reps.length + '</div></div>' +
-      '</div></div>';
-  } catch(e) {
-    el.innerHTML = '<div class="import-preview"><div class="import-preview-err">⚠ Não foi possível gerar a prévia: ' + e.message + '. Confira se os arquivos são do mês/loja corretos antes de atualizar.</div></div>';
-  }
+  el.innerHTML = '<div class="import-preview"><div class="import-preview-head">⏳ Processando prévia, aguarde...</div></div>';
+  setTimeout(function(){
+    try {
+      var datas = parseGeralCombinado(rawCurrent.g, rawCurrent.g2||null);
+      var clis = {};
+      if(rawCurrent.c) clis = parseClientes(rawCurrent.c);
+      else if(rawFixed.c) clis = parseClientes(rawFixed.c);
+      var novos = parseVendas(rawCurrent.v, datas, clis, 'atual').filter(function(r){return !isExcl(r.Status)});
+      var totalLiq = novos.reduce(function(s,r){return s+(r.Liq||0)}, 0);
+      var reps = Array.from(new Set(novos.map(function(r){return r.Rep}).filter(Boolean)));
+      el.innerHTML = '<div class="import-preview">' +
+        '<div class="import-preview-head">🔍 Prévia da importação — Mês Atual</div>' +
+        '<div class="import-preview-grid">' +
+          '<div class="import-preview-item"><div class="ipv-lbl">Pedidos</div><div class="ipv-val">' + novos.length + '</div></div>' +
+          '<div class="import-preview-item"><div class="ipv-lbl">Valor Líquido</div><div class="ipv-val">R$ ' + fmtN(totalLiq) + '</div></div>' +
+          '<div class="import-preview-item"><div class="ipv-lbl">Representantes</div><div class="ipv-val">' + reps.length + '</div></div>' +
+        '</div></div>';
+    } catch(e) {
+      el.innerHTML = '<div class="import-preview"><div class="import-preview-err">⚠ Não foi possível gerar a prévia: ' + e.message + '. Confira se os arquivos são do mês/loja corretos antes de atualizar.</div></div>';
+    }
+  }, 30);
 }
 
 function processFixed() {
@@ -1520,42 +1526,55 @@ function processFixed() {
   var btn = document.getElementById('btn-fixed');
   var origText = btn.textContent;
   btn.textContent = 'Processando...'; btn.disabled = true;
-  try {
-    var datas = parseGeralCombinado(rawFixed.g, rawFixed.g2);
-    var clis  = parseClientes(rawFixed.c);
-    allFixed = allFixed.filter(function(r) { return r.Mes !== mesRef; });
-    var novos = parseVendas(rawFixed.v, datas, clis, mesRef).filter(function(r){return !isExcl(r.Status)});
-    allFixed = allFixed.concat(novos);
-    // Store item-level data for Sell Out (from rawFixed.g/g2)
-    pedidosItensFixed[mesRef] = [];
-    [rawFixed.g, rawFixed.g2].filter(Boolean).forEach(function(t) {
-      try { pedidosItensFixed[mesRef] = pedidosItensFixed[mesRef].concat(parseItensGeral(t)); } catch(e) {}
-    });
-    renderMesesSalvos();
-    publishToSheets(allFixed.concat(allCurrent));
-    buildCombined();
-    btn.textContent = origText; btn.disabled = !(rawFixed.v && rawFixed.g && rawFixed.c);
-    toast(mesRef + ' adicionado! ' + novos.length + ' pedidos.');
-    updateFixedStatus(true, mesRef + ': ' + novos.length + ' pedidos adicionados ao historico.');
-  } catch(e){
-    btn.textContent = origText; btn.disabled = false;
-    toast('Erro: '+e.message, 1); console.error(e);
-    updateFixedStatus(false, 'Erro ao processar ' + mesRef + ': ' + e.message);
-  }
+  updateFixedStatus(true, 'Processando ' + mesRef + ', aguarde (pode levar mais de um minuto com relatórios grandes)...');
+  setTimeout(function(){
+    try {
+      var datas = parseGeralCombinado(rawFixed.g, rawFixed.g2);
+      var clis  = parseClientes(rawFixed.c);
+      allFixed = allFixed.filter(function(r) { return r.Mes !== mesRef; });
+      var novos = parseVendas(rawFixed.v, datas, clis, mesRef).filter(function(r){return !isExcl(r.Status)});
+      allFixed = allFixed.concat(novos);
+      // Store item-level data for Sell Out (from rawFixed.g/g2)
+      pedidosItensFixed[mesRef] = [];
+      [rawFixed.g, rawFixed.g2].filter(Boolean).forEach(function(t) {
+        try { pedidosItensFixed[mesRef] = pedidosItensFixed[mesRef].concat(parseItensGeral(t)); } catch(e) {}
+      });
+      renderMesesSalvos();
+      publishToSheets(allFixed.concat(allCurrent));
+      buildCombined();
+      btn.textContent = origText; btn.disabled = !(rawFixed.v && rawFixed.g && rawFixed.c);
+      toast(mesRef + ' adicionado! ' + novos.length + ' pedidos.');
+      updateFixedStatus(true, mesRef + ': ' + novos.length + ' pedidos adicionados ao historico.');
+    } catch(e){
+      btn.textContent = origText; btn.disabled = false;
+      toast('Erro: '+e.message, 1); console.error(e);
+      updateFixedStatus(false, 'Erro ao processar ' + mesRef + ': ' + e.message);
+    }
+  }, 30);
 }
 
 function processCurrent() {
-  try {
-    var datas = parseGeralCombinado(rawCurrent.g, rawCurrent.g2||null);
-    var clis = {};
-    if(rawCurrent.c) clis = parseClientes(rawCurrent.c);
-    else if(rawFixed.c) clis = parseClientes(rawFixed.c);
-    allCurrent = parseVendas(rawCurrent.v, datas, clis, 'atual').filter(function(r){return !isExcl(r.Status)});
-    var now = new Date().toLocaleString('pt-BR');
-    document.getElementById('current-status').textContent = 'Processado as ' + now + ' — publicando...';
-    publishToSheets(allFixed.concat(allCurrent));
-    buildCombined();
-  } catch(e){ toast('Erro: '+e.message, 1); console.error(e); }
+  var btn = document.getElementById('btn-current');
+  var origText = btn.textContent;
+  btn.textContent = 'Processando...'; btn.disabled = true;
+  document.getElementById('current-status').textContent = 'Processando arquivos, aguarde (pode levar mais de um minuto com relatórios grandes)...';
+  setTimeout(function(){
+    try {
+      var datas = parseGeralCombinado(rawCurrent.g, rawCurrent.g2||null);
+      var clis = {};
+      if(rawCurrent.c) clis = parseClientes(rawCurrent.c);
+      else if(rawFixed.c) clis = parseClientes(rawFixed.c);
+      allCurrent = parseVendas(rawCurrent.v, datas, clis, 'atual').filter(function(r){return !isExcl(r.Status)});
+      var now = new Date().toLocaleString('pt-BR');
+      document.getElementById('current-status').textContent = 'Processado as ' + now + ' — publicando...';
+      publishToSheets(allFixed.concat(allCurrent));
+      buildCombined();
+      btn.textContent = origText; btn.disabled = false;
+    } catch(e){
+      btn.textContent = origText; btn.disabled = false;
+      toast('Erro: '+e.message, 1); console.error(e);
+    }
+  }, 30);
 }
 
 function renderMesesSalvos() {
