@@ -98,6 +98,7 @@ tr:hover td{background:var(--blue-lt)}
 .slot{border:2px dashed var(--border);border-radius:var(--r-sm);padding:16px 12px;text-align:center;cursor:pointer;transition:.2s;position:relative}
 .slot:hover{border-color:var(--blue);background:var(--blue-lt)}
 .slot.loaded{border-color:var(--green-dk);border-style:solid;background:var(--green-lt)}
+.slot.invalid{border-color:var(--red-dk);border-style:solid;background:var(--red-lt)}
 .slot input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer}
 .slot-ico{font-size:20px;margin-bottom:4px}
 .slot-lbl{font-size:12px;font-weight:600;color:var(--navy)}
@@ -1360,14 +1361,45 @@ function renderCharts(v) {
 
 // ── FILE LOADING ─────────────────────────────────────
 
+// ── Validacao de formato: evita trocar Vendas <-> Geral <-> Clientes ──
+var FORMATO_ESPERADO = {v:'vendas', g:'geral', g2:'geral', c:'clientes'};
+var FORMATO_LABEL = {vendas:'Relatório de Vendas', geral:'Relatório Geral', clientes:'Cadastro de Clientes', desconhecido:'formato não reconhecido'};
+
+function detectFormatoRelatorio(txt) {
+  var amostra = txt.slice(0, 20000);
+  var temLinhaVendas = /^\d{2}\/\d{2}\/\d{4}\s\d{2}:\d{2}:\d{2}/m.test(amostra);
+  var temBlocoGeral = /^Pedido\s+:\s+\d+/m.test(amostra) || /Repres\.\s*:/.test(amostra) || /Faturar em\s*:/.test(amostra);
+  if(temLinhaVendas && !temBlocoGeral) return 'vendas';
+  if(temBlocoGeral && !temLinhaVendas) return 'geral';
+  if(/^\s*Codigo/mi.test(amostra) && !temLinhaVendas && !temBlocoGeral) return 'clientes';
+  return 'desconhecido';
+}
+
+// Retorna true se o arquivo bateu com o esperado (ou formato nao identificado, para nao travar casos legitimos)
+function validarFormatoSlot(type, txt, slot, hint, fileName) {
+  var esperado = FORMATO_ESPERADO[type];
+  var detectado = detectFormatoRelatorio(txt);
+  if(detectado !== 'desconhecido' && detectado !== esperado) {
+    if(slot) { slot.classList.remove('loaded'); slot.classList.add('invalid'); }
+    if(hint) hint.textContent = fileName + ' — ARQUIVO TROCADO?';
+    toast('"' + fileName + '" parece ser um ' + FORMATO_LABEL[detectado] + ', mas era esperado um ' + FORMATO_LABEL[esperado] + ' neste campo. Confira se os arquivos não foram trocados.', 1);
+    return false;
+  }
+  if(slot) { slot.classList.remove('invalid'); slot.classList.add('loaded'); }
+  if(hint) hint.textContent = fileName;
+  return true;
+}
+
 function setFixedFile(type, file, cb) {
   var reader = new FileReader();
   reader.onload = function(e) {
-    rawFixed[type] = e.target.result;
     var slot = document.getElementById('sl-f' + type);
-    if(slot) slot.classList.add('loaded');
     var hint = document.getElementById('sh-f' + type);
-    if(hint) hint.textContent = file.name;
+    if(validarFormatoSlot(type, e.target.result, slot, hint, file.name)) {
+      rawFixed[type] = e.target.result;
+    } else {
+      rawFixed[type] = null;
+    }
     if(cb) cb();
   };
   reader.readAsText(file, 'latin1');
@@ -1376,11 +1408,13 @@ function setFixedFile(type, file, cb) {
 function setCurrentFile(type, file, cb) {
   var reader = new FileReader();
   reader.onload = function(e) {
-    rawCurrent[type] = e.target.result;
     var slot = document.getElementById('sl-c' + type);
-    if(slot) slot.classList.add('loaded');
     var hint = document.getElementById('sh-c' + type);
-    if(hint) hint.textContent = file.name;
+    if(validarFormatoSlot(type, e.target.result, slot, hint, file.name)) {
+      rawCurrent[type] = e.target.result;
+    } else {
+      rawCurrent[type] = null;
+    }
     if(cb) cb();
   };
   reader.readAsText(file, 'latin1');
