@@ -1745,7 +1745,7 @@ async function doLogin() {
     showPage('pg-import');
     loadFromSheets();
   } else {
-    ['nav-relatorio','nav-sellout','nav-vendedor','nav-promo','nav-data'].forEach(function(id) {
+    ['nav-relatorio','nav-promo','nav-data'].forEach(function(id) {
       document.getElementById(id).style.display='block';
     });
     await loadFromSheets();
