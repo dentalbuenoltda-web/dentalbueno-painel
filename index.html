@@ -758,7 +758,7 @@ var USUARIOS = [
   {nome:'WENDERSON',senha:'000',perfil:'rep',ativo:true}
 ];
 
-var EXCL_STATUS = ['Licitacao','Ped. Excluido','Ped.Cancelado'];
+var EXCL_STATUS = ['Licitacao','Ped. Excluido','Ped.Cancelado','Orcamento','Orc. Bloqueado','Liberado'];
 var isExcl = function(s) { return EXCL_STATUS.indexOf((s||'').trim()) !== -1; };
 
 var MESES_PT = {'01':'Janeiro','02':'Fevereiro','03':'Marco','04':'Abril','05':'Maio','06':'Junho','07':'Julho','08':'Agosto','09':'Setembro','10':'Outubro','11':'Novembro','12':'Dezembro'};
@@ -1110,6 +1110,25 @@ function parseTXTGoiania(text) {
 
 // ── DATA FLOW ────────────────────────────────────────
 
+// Um mesmo Pedido pode aparecer em mais de um arquivo/mes importado (ex.: fica
+// "Faturado" num relatorio e reaparece como "Ped. Fechado" num relatorio
+// posterior, depois que o recebimento e a baixa sao processados). Sem isso a
+// mesma venda e somada 2x em buildCombined(). Chave de dedup = numero do Pedido;
+// em caso de duplicidade mantemos o registro com o status mais "final".
+var STATUS_PRIORIDADE_DEDUP = ['Faturado', 'Ped. Fechado-B', 'Ped. Fechado'];
+function dedupPorPedido(arr) {
+  var porPedido = {};
+  arr.forEach(function(r) {
+    var k = r.Pedido;
+    var atual = porPedido[k];
+    if(!atual) { porPedido[k] = r; return; }
+    var pAtual = STATUS_PRIORIDADE_DEDUP.indexOf(atual.Status);
+    var pNovo  = STATUS_PRIORIDADE_DEDUP.indexOf(r.Status);
+    if(pNovo > pAtual) porPedido[k] = r;
+  });
+  return Object.keys(porPedido).map(function(k){ return porPedido[k]; });
+}
+
 function buildCombined() {
   if(pedidosItens.length === 0) {
     [rawCurrent.g, rawCurrent.g2].filter(Boolean).forEach(function(t) {
@@ -1118,6 +1137,7 @@ function buildCombined() {
   }
   var arr = allFixed.concat(allCurrent);
   arr.forEach(function(r) { r.MesRef = calcMes(r); });
+  arr = dedupPorPedido(arr);
   var ocultos = getRepsOcultos();
   if(ocultos.length) arr = arr.filter(function(r){ return ocultos.indexOf(r.Rep) === -1; });
   allData = arr;
@@ -2734,7 +2754,6 @@ function getVendedorBase() {
   var ini = document.getElementById('vv-ini').value;
   var fim = document.getElementById('vv-fim').value;
   return allData.filter(function(r) {
-    if(!(r.NFe && r.NFe.trim())) return false;
     if(currentPerfil !== 'admin' && r.Rep !== currentUser) return false;
     if(ini || fim) {
       var iso = toISO((r.DataOrig && r.DataOrig.trim()) ? r.DataOrig : r.Data);
