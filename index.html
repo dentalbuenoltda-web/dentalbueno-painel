@@ -758,8 +758,20 @@ var USUARIOS = [
   {nome:'WENDERSON',senha:'000',perfil:'rep',ativo:true}
 ];
 
-var EXCL_STATUS = ['Licitacao','Ped. Excluido','Ped.Cancelado','Orcamento','Orc. Bloqueado','Liberado'];
-var isExcl = function(s) { return EXCL_STATUS.indexOf((s||'').trim()) !== -1; };
+// Regra de negocio (confirmada com o cliente): Licitacao nunca e venda e pode
+// ser descartada ja na importacao (nao "envenena" nada, o pedido pode evoluir
+// pra Orcamento depois num arquivo seguinte). Cancelado/Excluido tem que
+// SOBREVIVER a importacao (sem filtro aqui) pra o dedupPorPedido() em
+// buildCombined() conseguir enxergar, entre arquivos diferentes, que um
+// pedido foi cancelado -- e excluir o pedido inteiro, mesmo que ja tenha
+// aparecido como Orcamento/Liberado/Faturado em outro mes.
+var STATUS_IGNORAR_NA_IMPORTACAO = ['Licitacao'];
+var isIgnoravel = function(s) { return STATUS_IGNORAR_NA_IMPORTACAO.indexOf((s||'').trim()) !== -1; };
+// Usado so pela previa de importacao (estimativa de um unico arquivo, antes
+// do dedup entre meses): da uma ideia melhor do valor final excluindo tambem
+// o que ja se sabe cancelado dentro do proprio arquivo.
+var STATUS_NUNCA_VENDA = ['Licitacao','Ped. Excluido','Ped.Cancelado'];
+var isNuncaVenda = function(s) { return STATUS_NUNCA_VENDA.indexOf((s||'').trim()) !== -1; };
 
 var MESES_PT = {'01':'Janeiro','02':'Fevereiro','03':'Marco','04':'Abril','05':'Maio','06':'Junho','07':'Julho','08':'Agosto','09':'Setembro','10':'Outubro','11':'Novembro','12':'Dezembro'};
 
@@ -1110,23 +1122,37 @@ function parseTXTGoiania(text) {
 
 // ── DATA FLOW ────────────────────────────────────────
 
-// Um mesmo Pedido pode aparecer em mais de um arquivo/mes importado (ex.: fica
-// "Faturado" num relatorio e reaparece como "Ped. Fechado" num relatorio
-// posterior, depois que o recebimento e a baixa sao processados). Sem isso a
-// mesma venda e somada 2x em buildCombined(). Chave de dedup = numero do Pedido;
-// em caso de duplicidade mantemos o registro com o status mais "final".
-var STATUS_PRIORIDADE_DEDUP = ['Faturado', 'Ped. Fechado-B', 'Ped. Fechado'];
+// Um pedido evolui Orcamento -> Pedido Liberado -> Pedido Fechado -> Faturado
+// (ou Faturado -> recebimento/baixa -> Ped. Fechado) ao longo de varios
+// arquivos/meses importados. Regras de negocio confirmadas:
+// 1. Orcamento, Orc. Bloqueado, Liberado, Faturado, Ped. Fechado(-B) SAO venda
+//    a partir do momento em que existem -- nao esperar virar Faturado.
+// 2. Cada pedido conta UMA UNICA VEZ, no mes de origem (DataOrig/calcMes),
+//    mesmo reaparecendo em varios arquivos ao longo do funil.
+// 3. Se o pedido em QUALQUER momento aparecer como Ped.Cancelado ou
+//    Ped. Excluido, ele deixa de ser venda por completo -- mesmo que ja
+//    tenha aparecido como Orcamento/Liberado/Faturado antes.
+var CANCEL_STATUS = ['Ped. Excluido','Ped.Cancelado'];
+var STATUS_VENDA_PRIORIDADE = ['Orcamento','Orc. Bloqueado','Liberado','Faturado','Ped. Fechado-B','Ped. Fechado'];
 function dedupPorPedido(arr) {
   var porPedido = {};
   arr.forEach(function(r) {
-    var k = r.Pedido;
-    var atual = porPedido[k];
-    if(!atual) { porPedido[k] = r; return; }
-    var pAtual = STATUS_PRIORIDADE_DEDUP.indexOf(atual.Status);
-    var pNovo  = STATUS_PRIORIDADE_DEDUP.indexOf(r.Status);
-    if(pNovo > pAtual) porPedido[k] = r;
+    (porPedido[r.Pedido] = porPedido[r.Pedido] || []).push(r);
   });
-  return Object.keys(porPedido).map(function(k){ return porPedido[k]; });
+  var resultado = [];
+  Object.keys(porPedido).forEach(function(k) {
+    var recs = porPedido[k];
+    var cancelado = recs.some(function(r){ return CANCEL_STATUS.indexOf(r.Status) !== -1; });
+    if(cancelado) return; // pedido inteiro fora, independente do que veio antes
+    var validos = recs.filter(function(r){ return STATUS_VENDA_PRIORIDADE.indexOf(r.Status) !== -1; });
+    if(!validos.length) return; // so apareceu como Licitacao (ou status desconhecido) -- ainda nao e venda
+    var escolhido = validos[0];
+    validos.forEach(function(r) {
+      if(STATUS_VENDA_PRIORIDADE.indexOf(r.Status) > STATUS_VENDA_PRIORIDADE.indexOf(escolhido.Status)) escolhido = r;
+    });
+    resultado.push(escolhido);
+  });
+  return resultado;
 }
 
 function buildCombined() {
@@ -1560,7 +1586,7 @@ function renderPreviewFixed() {
       var mesRef = document.getElementById('mes-ref').value || '(selecione o mês)';
       var datas = parseGeralCombinado(rawFixed.g, rawFixed.g2);
       var clis  = parseClientes(rawFixed.c);
-      var novos = parseVendas(rawFixed.v, datas, clis, mesRef).filter(function(r){return !isExcl(r.Status)});
+      var novos = parseVendas(rawFixed.v, datas, clis, mesRef).filter(function(r){return !isNuncaVenda(r.Status)});
       var totalLiq = novos.reduce(function(s,r){return s+(r.Liq||0)}, 0);
       var reps = Array.from(new Set(novos.map(function(r){return r.Rep}).filter(Boolean)));
       el.innerHTML = '<div class="import-preview">' +
@@ -1594,7 +1620,7 @@ function renderPreviewCurrent() {
       var clis = {};
       if(rawCurrent.c) clis = parseClientes(rawCurrent.c);
       else if(rawFixed.c) clis = parseClientes(rawFixed.c);
-      var novos = parseVendas(rawCurrent.v, datas, clis, 'atual').filter(function(r){return !isExcl(r.Status)});
+      var novos = parseVendas(rawCurrent.v, datas, clis, 'atual').filter(function(r){return !isNuncaVenda(r.Status)});
       var totalLiq = novos.reduce(function(s,r){return s+(r.Liq||0)}, 0);
       var reps = Array.from(new Set(novos.map(function(r){return r.Rep}).filter(Boolean)));
       el.innerHTML = '<div class="import-preview">' +
@@ -1622,7 +1648,7 @@ function processFixed() {
       var datas = parseGeralCombinado(rawFixed.g, rawFixed.g2);
       var clis  = parseClientes(rawFixed.c);
       allFixed = allFixed.filter(function(r) { return r.Mes !== mesRef; });
-      var novos = parseVendas(rawFixed.v, datas, clis, mesRef).filter(function(r){return !isExcl(r.Status)});
+      var novos = parseVendas(rawFixed.v, datas, clis, mesRef).filter(function(r){return !isIgnoravel(r.Status)});
       allFixed = allFixed.concat(novos);
       // Store item-level data for Sell Out (from rawFixed.g/g2)
       pedidosItensFixed[mesRef] = [];
@@ -1654,7 +1680,7 @@ function processCurrent() {
       var clis = {};
       if(rawCurrent.c) clis = parseClientes(rawCurrent.c);
       else if(rawFixed.c) clis = parseClientes(rawFixed.c);
-      allCurrent = parseVendas(rawCurrent.v, datas, clis, 'atual').filter(function(r){return !isExcl(r.Status)});
+      allCurrent = parseVendas(rawCurrent.v, datas, clis, 'atual').filter(function(r){return !isIgnoravel(r.Status)});
       var now = new Date().toLocaleString('pt-BR');
       document.getElementById('current-status').textContent = 'Processado as ' + now + ' — publicando...';
       publishToSheets(allFixed.concat(allCurrent));
@@ -1744,8 +1770,8 @@ async function loadFromSheets() {
       r.Liq     = parseFloat(r.Liq)||0;
       r.Desc    = parseFloat(r.Desc)||0;
     });
-    allCurrent = rows.filter(function(r){return r.Mes==='atual' && !isExcl(r.Status)});
-    allFixed   = rows.filter(function(r){return r.Mes!=='atual' && !isExcl(r.Status)});
+    allCurrent = rows.filter(function(r){return r.Mes==='atual' && !isIgnoravel(r.Status)});
+    allFixed   = rows.filter(function(r){return r.Mes!=='atual' && !isIgnoravel(r.Status)});
     renderMesesSalvos();
     document.getElementById('current-status').textContent = 'Dados carregados do Sheets';
     buildCombined();
